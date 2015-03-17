@@ -37,7 +37,7 @@ angular.module("ngDraggable", [])
                     var onDragSuccessCallback = $parse(attrs.ngDragSuccess) || null;
                     var allowTransform = angular.isDefined(attrs.allowTransform) ? scope.$eval(attrs.allowTransform) : true;
 
-                    console.log("40","scope","link",  angular.isDefined(attrs.allowTransform) , allowTransform);
+                    //console.log("40","scope","link",  angular.isDefined(attrs.allowTransform) , allowTransform);
 
                     var initialize = function () {
                         element.attr('draggable', 'false'); // prevent native drag
@@ -280,7 +280,7 @@ angular.module("ngDraggable", [])
 
                         // don't listen to drop events if this is the element being dragged
                         // only update the styles and return
-                        console.log("266","onDragEnd","onDragEnd", _myid, obj.uid);
+                        //console.log("266","onDragEnd","onDragEnd", _myid, obj.uid);
                         if (!_dropEnabled || _myid === obj.uid) {
                             updateDragStyles(false, obj.element);
                             return;
@@ -449,11 +449,10 @@ angular.module("ngDraggable", [])
 
 
                 var absorbEvent_ = function (event) {
-                    var e = event.originalEvent;
-                    e.preventDefault && e.preventDefault();
-                    e.stopPropagation && e.stopPropagation();
-                    e.cancelBubble = true;
-                    e.returnValue = false;
+                    event.preventDefault && event.preventDefault();
+                    event.stopPropagation && event.stopPropagation();
+                    event.cancelBubble = true;
+                    event.returnValue = false;
                     return false;
                 }
 
