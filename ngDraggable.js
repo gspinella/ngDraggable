@@ -225,7 +225,6 @@ angular.module("ngDraggable", [])
                 link: function (scope, element, attrs) {
                     scope.value = attrs.ngDrop;
                     scope.isTouching = false;
-
                     var _lastDropTouch=null;
 
                     var _myid = scope.$id;
@@ -250,7 +249,9 @@ angular.module("ngDraggable", [])
                         attrs.$observe("ngDrop", onEnableChange);
                         scope.$on('$destroy', onDestroy);
                         scope.$on('draggable:start', onDragStart);
-                        scope.$on('draggable:move', onDragMove);
+                        if(attrs.ngDragMove){
+                            scope.$on('draggable:move', onDragMove);
+                        }
                         scope.$on('draggable:end', onDragEnd);
                     };
 
@@ -274,7 +275,7 @@ angular.module("ngDraggable", [])
                         $timeout(function(){
                             onDragMoveCallback(scope, {$data: obj.data, $event: obj});
                         });
-                    }
+                    };
 
                     var onDragEnd = function (evt, obj) {
 
