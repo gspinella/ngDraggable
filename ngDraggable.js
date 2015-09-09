@@ -9,7 +9,7 @@ angular.module("ngDraggable", [])
             var scope = this;
             scope.inputEvent = function(event) {
                 return angular.isDefined(event.touches) ? event.touches[0] : event;
-            }
+            };
 
         }])
         .directive('ngDrag', ['$rootScope', '$parse', '$document', '$window', 'ngDraggable', function ($rootScope, $parse, $document, $window, ngDraggable) {
@@ -37,7 +37,10 @@ angular.module("ngDraggable", [])
                     var onDragSuccessCallback = $parse(attrs.ngDragSuccess) || null;
                     var allowTransform = angular.isDefined(attrs.allowTransform) ? scope.$eval(attrs.allowTransform) : true;
 
-                    //console.log("40","scope","link",  angular.isDefined(attrs.allowTransform) , allowTransform);
+                    var getDragData = $parse(attrs.ngDragData);
+
+                    // deregistration function for mouse move events in $rootScope triggered by jqLite trigger handler
+                    var _deregisterRootMoveListener = angular.noop;
 
                     var initialize = function () {
                         element.attr('draggable', 'false'); // prevent native drag
@@ -56,14 +59,13 @@ angular.module("ngDraggable", [])
                         scope.$on('$destroy', onDestroy);
                         scope.$watch(attrs.ngDrag, onEnableChange);
                         scope.$watch(attrs.ngCenterAnchor, onCenterAnchor);
-                        scope.$watch(attrs.ngDragData, onDragDataChange);
                         // wire up touch events
                         if (_dragHandle) {
                             // handle(s) specified, use those to initiate drag
                             _dragHandle.on(_pressEvents, onpress);
                         } else {
                             // no handle(s) specified, use the element as the handle
-                            element.on(_pressEvents, onpress);    
+                            element.on(_pressEvents, onpress);
                         }
                         if(! _hasTouch && element[0].nodeName.toLowerCase() == "img"){
                             element.on('mousedown', function(){ return false;}); // prevent native drag for images
@@ -72,24 +74,19 @@ angular.module("ngDraggable", [])
                     var onDestroy = function (enable) {
                         toggleListeners(false);
                     };
-                    var onDragDataChange = function (newVal, oldVal) {
-                        _data = newVal;
-                    };
                     var onEnableChange = function (newVal, oldVal) {
                         _dragEnabled = (newVal);
                     };
                     var onCenterAnchor = function (newVal, oldVal) {
                         if(angular.isDefined(newVal))
                         _centerAnchor = (newVal || 'true');
-                    }
+                    };
 
                     var isClickableElement = function (evt) {
                         return (
-                                angular.isDefined(angular.element(evt.target).attr("ng-click"))
-                                || angular.isDefined(angular.element(evt.target).attr("ng-dblclick"))
-                                || angular.isDefined(angular.element(evt.target).attr("ng-cancel-drag"))
+                                angular.isDefined(angular.element(evt.target).attr("ng-cancel-drag"))
                                 );
-                    }
+                    };
                     /*
                      * When the element is clicked start the drag behaviour
                      * On touch devices as a small delay so as not to prevent native window scrolling
@@ -97,8 +94,12 @@ angular.module("ngDraggable", [])
                     var onpress = function(evt) {
                         if(! _dragEnabled)return;
 
-                        // disable drag on clickable element
                         if (isClickableElement(evt)) {
+                            return;
+                        }
+
+                        if (evt.type == "mousedown" && evt.button != 0) {
+                            // Do not start dragging on right-click
                             return;
                         }
 
@@ -125,7 +126,6 @@ angular.module("ngDraggable", [])
                     var onlongpress = function(evt) {
                         if(! _dragEnabled)return;
                         evt.preventDefault();
-                        element.addClass('dragging');
 
                         offset = element[0].getBoundingClientRect();
                         if(allowTransform)
@@ -152,12 +152,24 @@ angular.module("ngDraggable", [])
 
                         $document.on(_moveEvents, onmove);
                         $document.on(_releaseEvents, onrelease);
-                        $rootScope.$broadcast('draggable:start', {x:_mx, y:_my, tx:_tx, ty:_ty, event:evt, element:element, data:_data});
-                    }
+                        // This event is used to receive manually triggered mouse move events
+                        // jqLite unfortunately only supports triggerHandler(...)
+                        // See http://api.jquery.com/triggerHandler/
+                        // _deregisterRootMoveListener = $rootScope.$on('draggable:_triggerHandlerMove', onmove);
+                        _deregisterRootMoveListener = $rootScope.$on('draggable:_triggerHandlerMove', function(event, origEvent) {
+                            onmove(origEvent);
+                        });
+                    };
 
                     var onmove = function (evt) {
                         if (!_dragEnabled)return;
                         evt.preventDefault();
+
+                        if (!element.hasClass('dragging')) {
+                            _data = getDragData(scope);
+                            element.addClass('dragging');
+                            $rootScope.$broadcast('draggable:start', {x:_mx, y:_my, tx:_tx, ty:_ty, event:evt, element:element, data:_data});
+                        }
 
                         _mx = ngDraggable.inputEvent(evt).pageX;//ngDraggable.getEventProp(evt, 'pageX');
                         _my = ngDraggable.inputEvent(evt).pageY;//ngDraggable.getEventProp(evt, 'pageY');
@@ -173,7 +185,7 @@ angular.module("ngDraggable", [])
                         moveElement(_tx, _ty);
 
                         $rootScope.$broadcast('draggable:move', { x: _mx, y: _my, tx: _tx, ty: _ty, event: evt, element: element, data: _data, uid: _myid });
-                    }
+                    };
 
                     var onrelease = function(evt) {
                         if (!_dragEnabled)
@@ -185,7 +197,8 @@ angular.module("ngDraggable", [])
                         reset();
                         $document.off(_moveEvents, onmove);
                         $document.off(_releaseEvents, onrelease);
-                    }
+                        _deregisterRootMoveListener();
+                    };
 
                     var onDragComplete = function(evt) {
                         if (!onDragSuccessCallback )return;
@@ -193,14 +206,14 @@ angular.module("ngDraggable", [])
                         scope.$apply(function () {
                             onDragSuccessCallback(scope, {$data: _data, $event: evt});
                         });
-                    }
+                    };
 
                     var reset = function() {
                         if(allowTransform)
                         element.css({transform:'', 'z-index':'', '-webkit-transform':'', '-ms-transform':''});
                         else
-                        element.css({'position':'',top:'',left:''})
-                    }
+                        element.css({'position':'',top:'',left:''});
+                    };
 
                     var moveElement = function (x, y) {
                         if(allowTransform) {
@@ -213,18 +226,19 @@ angular.module("ngDraggable", [])
                         }else{
                             element.css({'left':x+'px','top':y+'px', 'position':'fixed'});
                         }
-                    }
+                    };
                     initialize();
                 }
             };
         }])
 
-        .directive('ngDrop', ['$parse', '$timeout', '$window', 'ngDraggable', function ($parse, $timeout, $window, ngDraggable) {
+        .directive('ngDrop', ['$parse', '$timeout', '$window', '$document', 'ngDraggable', function ($parse, $timeout, $window, $document, ngDraggable) {
             return {
                 restrict: 'A',
                 link: function (scope, element, attrs) {
                     scope.value = attrs.ngDrop;
                     scope.isTouching = false;
+
                     var _lastDropTouch=null;
 
                     var _myid = scope.$id;
@@ -246,12 +260,10 @@ angular.module("ngDraggable", [])
 
                         if (!enable)return;
                         // add listeners.
-                        attrs.$observe("ngDrop", onEnableChange);
+                        scope.$watch(attrs.ngDrop, onEnableChange);
                         scope.$on('$destroy', onDestroy);
                         scope.$on('draggable:start', onDragStart);
-                        if(attrs.ngDragMove){
-                            scope.$on('draggable:move', onDragMove);
-                        }
+                        scope.$on('draggable:move', onDragMove);
                         scope.$on('draggable:end', onDragEnd);
                     };
 
@@ -259,29 +271,33 @@ angular.module("ngDraggable", [])
                         toggleListeners(false);
                     };
                     var onEnableChange = function (newVal, oldVal) {
-                        _dropEnabled=scope.$eval(newVal);
+                        _dropEnabled=newVal;
                     };
                     var onDragStart = function(evt, obj) {
                         if(! _dropEnabled)return;
                         isTouching(obj.x,obj.y,obj.element);
-                        
-                        $timeout(function(){
-                            onDragStartCallback(scope, {$data: obj.data, $event: obj});
-                        });
+
+                        if (attrs.ngDragStart) {
+                            $timeout(function(){
+                                onDragStartCallback(scope, {$data: obj.data, $event: obj});
+                            });
+                        }
                     };
                     var onDragMove = function(evt, obj) {
                         if(! _dropEnabled)return;
                         isTouching(obj.x,obj.y,obj.element);
-                        $timeout(function(){
-                            onDragMoveCallback(scope, {$data: obj.data, $event: obj});
-                        });
+
+                        if (attrs.ngDragMove) {
+                            $timeout(function(){
+                                onDragMoveCallback(scope, {$data: obj.data, $event: obj});
+                            });
+                        }
                     };
 
                     var onDragEnd = function (evt, obj) {
 
                         // don't listen to drop events if this is the element being dragged
                         // only update the styles and return
-                        //console.log("266","onDragEnd","onDragEnd", _myid, obj.uid);
                         if (!_dropEnabled || _myid === obj.uid) {
                             updateDragStyles(false, obj.element);
                             return;
@@ -292,15 +308,21 @@ angular.module("ngDraggable", [])
                                 obj.callback(obj);
                             }
 
+                            if (attrs.ngDropSuccess) {
+                                $timeout(function(){
+                                    onDropCallback(scope, {$data: obj.data, $event: obj, $target: scope.$eval(scope.value)});
+                                });
+                            }
+                        }
+
+                        if (attrs.ngDragStop) {
                             $timeout(function(){
-                                onDropCallback(scope, {$data: obj.data, $event: obj, $target: scope.$eval(scope.value)});
+                                onDragStopCallback(scope, {$data: obj.data, $event: obj});
                             });
                         }
-                        $timeout(function(){
-                            onDragStopCallback(scope, {$data: obj.data, $event: obj});
-                        });
+
                         updateDragStyles(false, obj.element);
-                    }
+                    };
 
                     var isTouching = function(mouseX, mouseY, dragElement) {
                         var touching= hitTest(mouseX, mouseY);
@@ -310,7 +332,7 @@ angular.module("ngDraggable", [])
                         }
                         updateDragStyles(touching, dragElement);
                         return touching;
-                    }
+                    };
 
                     var updateDragStyles = function(touching, dragElement) {
                         if(touching){
@@ -321,12 +343,12 @@ angular.module("ngDraggable", [])
                             element.removeClass('drag-enter');
                             dragElement.removeClass('drag-over');
                         }
-                    }
+                    };
 
                     var hitTest = function(x, y) {
                         var bounds = element[0].getBoundingClientRect();// ngDraggable.getPrivOffset(element);
-                        bounds.right = bounds.left + element[0].offsetWidth;
-                        bounds.bottom = bounds.top + element[0].offsetHeight;
+                        x -= $document[0].body.scrollLeft + $document[0].documentElement.scrollLeft;
+                        y -= $document[0].body.scrollTop + $document[0].documentElement.scrollTop;
                         return  x >= bounds.left
                                 && x <= bounds.right
                                 && y <= bounds.bottom
@@ -387,7 +409,7 @@ angular.module("ngDraggable", [])
                         }
 
                         _dragOffset = element[0].getBoundingClientRect();//ngDraggable.getPrivOffset(element);
-                    }
+                    };
                     var onDragMove = function(evt, obj) {
                         if(_allowClone) {
 
@@ -414,7 +436,7 @@ angular.module("ngDraggable", [])
                             '-ms-transform': 'matrix(1, 0, 0, 1, '+x+', '+y+')'
                             //,margin: '0'  don't monkey with the margin,
                         });
-                    }
+                    };
 
                     var absorbEvent_ = function (event) {
                         var e = event;//.originalEvent;
@@ -450,16 +472,17 @@ angular.module("ngDraggable", [])
 
 
                 var absorbEvent_ = function (event) {
-                    event.preventDefault && event.preventDefault();
-                    event.stopPropagation && event.stopPropagation();
-                    event.cancelBubble = true;
-                    event.returnValue = false;
+                    var e = event;//event.originalEvent;
+                    e.preventDefault && e.preventDefault();
+                    e.stopPropagation && e.stopPropagation();
+                    e.cancelBubble = true;
+                    e.returnValue = false;
                     return false;
-                }
+                };
 
                 initialize();
             }
-        }
+        };
     }])
     .directive('ngCancelDrag', [function () {
         return {
@@ -467,9 +490,9 @@ angular.module("ngDraggable", [])
             link: function (scope, element, attrs) {
                 element.find('*').attr('ng-cancel-drag', 'ng-cancel-drag');
             }
-        }
+        };
     }])
-    .directive('ngDragScroll', ['$window', '$interval', '$timeout', '$document', function($window, $interval, $timeout, $document) {
+    .directive('ngDragScroll', ['$window', '$interval', '$timeout', '$document', '$rootScope', function($window, $interval, $timeout, $document, $rootScope) {
         return {
             restrict: 'A',
             link: function(scope, element, attrs) {
@@ -520,8 +543,8 @@ angular.module("ngDraggable", [])
 
                         if (scrollX !== 0 || scrollY !== 0) {
                             // Record the current scroll position.
-                            var currentScrollLeft = $(document).scrollLeft();
-                            var currentScrollTop = $(document).scrollTop();
+                            var currentScrollLeft = $document[0].documentElement.scrollLeft;
+                            var currentScrollTop = $document[0].documentElement.scrollTop;
 
                             // Remove the transformation from the element, scroll the window by the scroll distance
                             // record how far we scrolled, then reapply the element transformation.
@@ -530,8 +553,8 @@ angular.module("ngDraggable", [])
 
                             $window.scrollBy(scrollX, scrollY);
 
-                            var horizontalScrollAmount = $(document).scrollLeft() - currentScrollLeft;
-                            var verticalScrollAmount =  $(document).scrollTop() - currentScrollTop;
+                            var horizontalScrollAmount = $document[0].documentElement.scrollLeft - currentScrollLeft;
+                            var verticalScrollAmount =  $document[0].documentElement.scrollTop - currentScrollTop;
 
                             element.css('transform', elementTransform);
 
@@ -541,7 +564,7 @@ angular.module("ngDraggable", [])
                                 lastMouseEvent.pageX += horizontalScrollAmount;
                                 lastMouseEvent.pageY += verticalScrollAmount;
 
-                                $document.trigger(lastMouseEvent);
+                                $rootScope.$emit('draggable:_triggerHandlerMove', lastMouseEvent);
                             });
                         }
 
@@ -574,5 +597,5 @@ angular.module("ngDraggable", [])
                     lastMouseEvent = obj.event;
                 });
             }
-        }
+        };
     }]);
