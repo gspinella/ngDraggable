@@ -471,8 +471,8 @@ angular.module("ngDraggable", [])
                 };
 
 
-                var absorbEvent_ = function (event) {
-                    var e = event;//event.originalEvent;
+                var absorbEvent_ = function (e) {
+                   // var e = event;//event.originalEvent;
                     e.preventDefault && e.preventDefault();
                     e.stopPropagation && e.stopPropagation();
                     e.cancelBubble = true;
